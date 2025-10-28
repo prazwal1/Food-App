@@ -14,6 +14,7 @@
         button { padding:8px 16px; border-radius:6px; border:1px solid #2b6cb0; background:#3182ce; color:white; cursor:pointer; font-weight:500 }
         button:disabled { opacity:0.5; cursor:not-allowed }
         button.secondary { background:#f7fafc; color:#111; border:1px solid #cbd5e0 }
+        button.danger { background:#dc2626; border-color:#b91c1c }
         .muted { color:#666; font-size:0.9rem }
         .success { color:#047857; font-weight:600 }
         .error { color:#b91c1c; font-weight:600 }
@@ -25,19 +26,19 @@
         @keyframes spin { to { transform:rotate(360deg) } }
         .preview-box { max-height:300px; overflow:auto; margin-top:12px; border:1px solid #e5e7eb; border-radius:6px }
         .info-box { background:#f0f9ff; border:1px solid #bae6fd; padding:12px; border-radius:6px; margin-top:12px }
+        .storage-info { background:#fef3c7; border:1px solid #fde047; padding:8px 12px; border-radius:4px; margin-top:8px; font-size:0.85rem }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🍔 Demand Model — Admin UI</h1>
-        <p class="muted">Upload CSV or generate synthetic data, train the model, and make predictions</p>
-        <!-- Requirements Info -->
-        <div class="info-box">
-            <strong>📋 CSV Requirements:</strong><br>
-            • Must have 'order_placed_at' timestamp column<br>
-            • Include columns for each dish (e.g., burger, pizza, coke)<br>
-            • Minimum 200+ rows recommended for stable results
+        <p class="muted">Client-side session storage - Your data stays private in your browser</p>
+        
+        <div class="storage-info">
+            💾 <strong>Session Storage:</strong> All data and models are stored in your browser. Clear data to start fresh.
+            <button id="clearStorage" class="danger" style="float:right; padding:4px 8px; font-size:0.85rem">Clear All Data</button>
         </div>
+
         <!-- Data Input Card -->
         <div class="card">
             <h3 style="margin-top:0">Step 1: Load Data</h3>
@@ -75,12 +76,25 @@
             <div id="predictResult" style="margin-top:12px"></div>
         </div>
 
+        <!-- Requirements Info -->
+        <div class="info-box">
+            <strong>📋 CSV Requirements:</strong><br>
+            • Must have 'order_placed_at' timestamp column<br>
+            • Include columns for each dish (e.g., burger, pizza, coke)<br>
+            • Minimum 200+ rows recommended for stable results
+        </div>
     </div>
 
     <script>
         const API_BASE = '';
-        let dataLoaded = false;
-        let modelTrained = false;
+        
+        // State management
+        let state = {
+            dataLoaded: false,
+            modelTrained: false,
+            currentData: null,
+            modelState: null
+        };
 
         // Elements
         const csvInput = document.getElementById('csvFile');
@@ -95,13 +109,64 @@
         const predict24Btn = document.getElementById('predict24Btn');
         const predictSpinner = document.getElementById('predictSpinner');
         const predictResult = document.getElementById('predictResult');
+        const clearStorageBtn = document.getElementById('clearStorage');
+
+        // Storage helpers
+        function saveData(data) {
+            localStorage.setItem('demandModelData', JSON.stringify(data));
+            state.currentData = data;
+            state.dataLoaded = true;
+        }
+
+        function loadData() {
+            const saved = localStorage.getItem('demandModelData');
+            if (saved) {
+                state.currentData = JSON.parse(saved);
+                state.dataLoaded = true;
+                return state.currentData;
+            }
+            return null;
+        }
+
+        function saveModel(modelData) {
+            localStorage.setItem('demandModelState', JSON.stringify(modelData));
+            state.modelState = modelData;
+            state.modelTrained = true;
+        }
+
+        function loadModel() {
+            const saved = localStorage.getItem('demandModelState');
+            if (saved) {
+                state.modelState = JSON.parse(saved);
+                state.modelTrained = true;
+                return state.modelState;
+            }
+            return null;
+        }
+
+        function clearAllData() {
+            if (confirm('Clear all data and models from browser storage?')) {
+                localStorage.removeItem('demandModelData');
+                localStorage.removeItem('demandModelState');
+                state = { dataLoaded: false, modelTrained: false, currentData: null, modelState: null };
+                dataInfo.innerHTML = '';
+                dataPreview.style.display = 'none';
+                trainResult.innerHTML = '';
+                predictResult.innerHTML = '';
+                trainBtn.disabled = true;
+                predictHourBtn.disabled = true;
+                predict24Btn.disabled = true;
+                csvInput.value = '';
+                alert('All data cleared!');
+            }
+        }
 
         // Utilities
         function escapeHtml(s) {
             return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         }
 
-        function parseCSV(text, maxRows = 101) {
+        function parseCSV(text, maxRows = 100) {
             const lines = text.split(/\r?\n/).filter(l => l.trim());
             const rows = [];
             for (let line of lines.slice(0, maxRows)) {
@@ -130,6 +195,30 @@
             dataPreview.style.display = 'block';
         }
 
+        // Initialize from storage
+        function init() {
+            const data = loadData();
+            if (data) {
+                dataInfo.innerHTML = `<span class="success">✓ Loaded saved data: ${data.rows} rows (${data.filename || 'synthetic'})</span>`;
+                if (data.csvContent) {
+                    const rows = parseCSV(data.csvContent, 100);
+                    renderTable(rows);
+                }
+                trainBtn.disabled = false;
+            }
+
+            const model = loadModel();
+            if (model) {
+                trainResult.innerHTML = `
+                    <div class="success">✓ Model loaded from storage</div>
+                    <div class="muted">Training rows: ${model.training_rows}</div>
+                    <div class="muted">Dishes: ${model.dish_columns.join(', ')}</div>
+                `;
+                predictHourBtn.disabled = false;
+                predict24Btn.disabled = false;
+            }
+        }
+
         // File Upload Handler
         csvInput.addEventListener('change', (e) => {
             const file = e.target.files?.[0];
@@ -138,10 +227,20 @@
             const reader = new FileReader();
             reader.onload = () => {
                 try {
-                    const rows = parseCSV(reader.result, 101);
+                    const csvContent = reader.result;
+                    const rows = parseCSV(csvContent);
+                    
+                    const data = {
+                        csvContent: csvContent,
+                        rows: rows.length - 1,
+                        filename: file.name,
+                        timestamp: new Date().toISOString(),
+                        type: 'uploaded'
+                    };
+                    
+                    saveData(data);
                     renderTable(rows);
-                    dataInfo.innerHTML = `<span class="success">✓ Uploaded: ${file.name} (${rows.length - 1} rows shown)</span>`;
-                    dataLoaded = true;
+                    dataInfo.innerHTML = `<span class="success">✓ Uploaded: ${file.name} (${data.rows} rows)</span>`;
                     trainBtn.disabled = false;
                 } catch (err) {
                     dataInfo.innerHTML = `<span class="error">Error: ${escapeHtml(err.message)}</span>`;
@@ -164,22 +263,29 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ rows })
                 });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.error || 'Generation failed');
+                const result = await res.json();
+                if (!res.ok) throw new Error(result.error || 'Generation failed');
 
-                dataInfo.innerHTML = `<span class="success">✓ Generated ${data.generated_rows} rows with ${data.dish_columns.length} dishes: ${data.dish_columns.join(', ')}</span>`;
+                // Get the CSV content
+                const csvRes = await fetch(`${API_BASE}/get_csv`);
+                const csvContent = await csvRes.text();
                 
-                // Preview the generated data
-                const previewRes = await fetch(`${API_BASE}/static/training_data_for_api.csv`);
-                if (previewRes.ok) {
-                    const csvText = await previewRes.text();
-                    const rows = parseCSV(csvText, 101);
-                    renderTable(rows);
-                }
+                const data = {
+                    csvContent: csvContent,
+                    rows: result.generated_rows,
+                    filename: 'synthetic_data.csv',
+                    timestamp: new Date().toISOString(),
+                    type: 'generated',
+                    dish_columns: result.dish_columns
+                };
                 
-                dataLoaded = true;
+                saveData(data);
+                const previewRows = parseCSV(csvContent, 100);
+                renderTable(previewRows);
+                
+                dataInfo.innerHTML = `<span class="success">✓ Generated ${data.rows} rows with ${data.dish_columns.length} dishes: ${data.dish_columns.join(', ')}</span>`;
                 trainBtn.disabled = false;
-                csvInput.value = ''; // Clear file input
+                csvInput.value = '';
             } catch (err) {
                 dataInfo.innerHTML = `<span class="error">Error: ${escapeHtml(err.message)}</span>`;
             } finally {
@@ -190,39 +296,35 @@
 
         // Train Model
         trainBtn.addEventListener('click', async () => {
+            if (!state.currentData) {
+                trainResult.innerHTML = '<span class="error">No data loaded</span>';
+                return;
+            }
+
             trainBtn.disabled = true;
             trainSpinner.style.display = 'inline-block';
-            trainResult.innerHTML = '';
+            trainResult.innerHTML = '<span class="muted">Training model...</span>';
 
             try {
-                let res;
-                // Check if synthetic data exists on server
-                const checkRes = await fetch(`${API_BASE}/static/training_data_for_api.csv`);
-                
-                if (checkRes.ok) {
-                    // Use server-side generated data
-                    trainResult.innerHTML = '<span class="muted">Training with generated dataset...</span>';
-                    res = await fetch(`${API_BASE}/train`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ csv_path: './static/training_data_for_api.csv' })
-                    });
-                } else {
-                    // Use uploaded file
-                    const file = csvInput.files?.[0];
-                    if (!file) throw new Error('No data loaded');
-                    
-                    trainResult.innerHTML = '<span class="muted">Training with uploaded file...</span>';
-                    const formData = new FormData();
-                    formData.append('file', file);
-                    res = await fetch(`${API_BASE}/train`, {
-                        method: 'POST',
-                        body: formData
-                    });
-                }
+                // Send CSV content to train endpoint
+                const res = await fetch(`${API_BASE}/train_session`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ csv_content: state.currentData.csvContent })
+                });
 
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || 'Training failed');
+
+                // Save model state
+                const modelData = {
+                    training_rows: data.training_rows,
+                    dish_columns: data.dish_columns,
+                    feature_cols: data.feature_cols,
+                    trained_at: new Date().toISOString()
+                };
+                
+                saveModel(modelData);
 
                 trainResult.innerHTML = `
                     <div class="success">✓ Model trained successfully!</div>
@@ -230,7 +332,6 @@
                     <div class="muted">Dishes: ${data.dish_columns.join(', ')}</div>
                 `;
                 
-                modelTrained = true;
                 predictHourBtn.disabled = false;
                 predict24Btn.disabled = false;
             } catch (err) {
@@ -247,7 +348,11 @@
             predictResult.innerHTML = '';
 
             try {
-                const res = await fetch(`${API_BASE}/predict/next_hour`);
+                const res = await fetch(`${API_BASE}/predict_session/next_hour`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ csv_content: state.currentData.csvContent })
+                });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || 'Prediction failed');
 
@@ -271,7 +376,11 @@
             predictResult.innerHTML = '';
 
             try {
-                const res = await fetch(`${API_BASE}/predict/next_24_hours`);
+                const res = await fetch(`${API_BASE}/predict_session/next_24_hours`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ csv_content: state.currentData.csvContent })
+                });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || 'Prediction failed');
 
@@ -303,6 +412,12 @@
                 predictSpinner.style.display = 'none';
             }
         });
+
+        // Clear storage
+        clearStorageBtn.addEventListener('click', clearAllData);
+
+        // Initialize on load
+        init();
     </script>
 </body>
 </html>
