@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8" />
-    <title>Demand Model — Admin</title>
+    <title>Food Demand</title>
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <style>
         body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial; margin: 20px; color:#111; background:#f9fafb }
@@ -31,12 +31,20 @@
 </head>
 <body>
     <div class="container">
-        <h1>🍔 Demand Model — Admin UI</h1>
+        <h1>Food Demand Model</h1>
         <p class="muted">Client-side session storage - Your data stays private in your browser</p>
         
         <div class="storage-info">
             💾 <strong>Session Storage:</strong> All data and models are stored in your browser. Clear data to start fresh.
             <button id="clearStorage" class="danger" style="float:right; padding:4px 8px; font-size:0.85rem">Clear All Data</button>
+        </div>
+
+        <!-- Requirements Info -->
+        <div class="info-box">
+            <strong>📋 CSV Requirements:</strong><br>
+            • Must have 'order_placed_at' timestamp column<br>
+            • Include columns for each dish (e.g., burger, pizza, coke)<br>
+            • Minimum 200+ rows recommended for stable results
         </div>
 
         <!-- Data Input Card -->
@@ -76,13 +84,6 @@
             <div id="predictResult" style="margin-top:12px"></div>
         </div>
 
-        <!-- Requirements Info -->
-        <div class="info-box">
-            <strong>📋 CSV Requirements:</strong><br>
-            • Must have 'order_placed_at' timestamp column<br>
-            • Include columns for each dish (e.g., burger, pizza, coke)<br>
-            • Minimum 200+ rows recommended for stable results
-        </div>
     </div>
 
     <script>
